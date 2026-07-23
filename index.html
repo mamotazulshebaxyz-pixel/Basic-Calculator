@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Smart Calculator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: #121212;
+        }
+
+        .calculator {
+            width: 320px;
+            max-width: 95%;
+            border-radius: 20px;
+            padding: 15px;
+            background: #1e1e1e;
+            color: white;
+            position: relative;
+        }
+
+        .history-label {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            cursor: pointer;
+            font-weight: bold;
+            color: #00e676;
+            font-size: 18px;
+        }
+
+        .display {
+            font-size: 32px;
+            text-align: right;
+            margin-top: 40px;
+            min-height: 40px;
+            word-wrap: break-word;
+        }
+
+        .result {
+            color: #00e676;
+            text-align: right;
+            margin-bottom: 10px;
+            min-height: 20px;
+        }
+
+        .buttons {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+        }
+
+        button {
+            height: 60px;
+            border: none;
+            border-radius: 12px;
+            font-size: 20px;
+            cursor: pointer;
+            background: #333;
+            color: white;
+        }
+
+        .operator { background: #ff9800; }
+        .equal { background: #00c853; }
+        .clear { background: #d50000; }
+        .back { background: #555; }
+
+        button:active { transform: scale(0.95); }
+
+        .history-overlay {
+            position: absolute;
+            top: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 320px;
+            max-width: 95%;
+            height: 400px;
+            background: #1e1e1e;
+            color: white;
+            display: none;
+            flex-direction: column;
+            padding: 15px;
+            box-sizing: border-box;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+            overflow-y: auto;
+            z-index: 1000;
+        }
+
+        .history-overlay.active { display: flex; }
+
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            cursor: grab;
+        }
+
+        .history-item {
+            font-size: 16px;
+            border-bottom: 1px solid #444;
+            padding: 8px 0;
+            cursor: pointer;
+        }
+
+        .history-item:hover { background: #333; }
+    </style>
+</head>
+
+<body>
+
+<div class="calculator">
+    <div class="history-label" onclick="toggleHistory()">History</div>
+
+    <div class="display" id="display"></div>
+    <div class="result" id="result"></div>
+
+    <div class="buttons">
+        <button class="clear" onclick="clearDisplay()">C</button>
+        <button class="back" onclick="backspace()">⌫</button>
+        <button onclick="press('%')">%</button>
+        <button class="operator" onclick="pressOperator('/')">/</button>
+
+        <button onclick="press('7')">7</button>
+        <button onclick="press('8')">8</button>
+        <button onclick="press('9')">9</button>
+        <button class="operator" onclick="pressOperator('*')">*</button>
+
+        <button onclick="press('4')">4</button>
+        <button onclick="press('5')">5</button>
+        <button onclick="press('6')">6</button>
+        <button class="operator" onclick="pressOperator('-')">-</button>
+
+        <button onclick="press('1')">1</button>
+        <button onclick="press('2')">2</button>
+        <button onclick="press('3')">3</button>
+        <button class="operator" onclick="pressOperator('+')">+</button>
+
+        <button onclick="press('0')">0</button>
+        <button onclick="pressDot()">.</button>
+        <button class="equal" onclick="calculate()">=</button>
+    </div>
+</div>
+
+<div class="history-overlay" id="historyOverlay">
+    <div class="history-header">
+        <h2>History</h2>
+        <button onclick="toggleHistory()">Close</button>
+    </div>
+    <div id="historyList"></div>
+</div>
+
+<script>
+let display = document.getElementById("display");
+let resultBox = document.getElementById("result");
+let historyOverlay = document.getElementById("historyOverlay");
+let historyList = document.getElementById("historyList");
+
+let isCalculated = false; // ট্র্যাক রাখবে '=' চাপা হয়েছে কিনা
+
+// Load saved history from localStorage
+let savedHistory = JSON.parse(localStorage.getItem("calculatorHistory")) || [];
+
+savedHistory.forEach(function(item){
+    addHistory(item.exp, item.res, false);
+});
+
+function press(val){
+    // '=' চাপার পর নতুন কোনো সংখ্যা বা % দিলে স্ক্রিন রিপ্রেট হয়ে নতুন করে শুরু হবে
+    if (isCalculated) {
+        display.innerText = "";
+        isCalculated = false;
+    }
+
+    display.innerText += val;
+    liveCalc();
+}
+
+// ✅ ডেসিমেল পয়েন্টের এরর ফিক্স করা ফাংশন
+function pressDot(){
+    if (isCalculated) {
+        display.innerText = "0";
+        isCalculated = false;
+    }
+
+    // বর্তমান সংখ্যার অংশ বের করা (অপারেটর দিয়ে আলাদা করা)
+    let parts = display.innerText.split(/[\+\-\*\/]/);
+    let currentNum = parts[parts.length - 1];
+
+    // যদি বর্তমান সংখ্যায় ইতিমধ্যে ডট না থাকে, তবেই ডট যোগ হবে
+    if (!currentNum.includes('.')) {
+        if (currentNum === "") {
+            display.innerText += "0."; // খালি থাকলে ০. বসবে
+        } else {
+            display.innerText += ".";
+        }
+    }
+    liveCalc();
+}
+
+function pressOperator(op){
+    if(display.innerText === "") return;
+
+    // '=' চাপার পর অপারেটর দিলে আগের রেজাল্টের সাথেই গণনা চালু থাকবে
+    isCalculated = false;
+
+    let last = display.innerText.slice(-1);
+    if(['+','-','*','/'].includes(last)){
+        display.innerText = display.innerText.slice(0,-1) + op;
+    }else{
+        display.innerText += op;
+    }
+    liveCalc();
+}
+
+function clearDisplay(){
+    display.innerText = "";
+    resultBox.innerText = "";
+    isCalculated = false;
+}
+
+function backspace(){
+    if (isCalculated) {
+        clearDisplay();
+        return;
+    }
+    display.innerText = display.innerText.slice(0,-1);
+    liveCalc();
+}
+
+function safeEval(exp){
+    try{
+        return Function('"use strict";return ('+exp+')')();
+    }catch{
+        return "";
+    }
+}
+
+// ✅ SMART % LOGIC
+function formatExpression(exp){
+    exp = exp.replace(/(\d+)([+\-])(\d+)%/g, function(_,a,op,b){
+        return a + op + "(" + a + "*" + b + "/100)";
+    });
+
+    exp = exp.replace(/(\d+)([\*\/])(\d+)%/g, function(_,a,op,b){
+        return a + op + "(" + b + "/100)";
+    });
+
+    exp = exp.replace(/(\d+)%/g, "($1/100)");
+
+    return exp;
+}
+
+function calculate(){
+    if (display.innerText === "") return;
+
+    let exp = formatExpression(display.innerText);
+    let result = safeEval(exp);
+
+    if(result !== ""){
+        addHistory(display.innerText, result);
+        display.innerText = result;
+        resultBox.innerText = "";
+        isCalculated = true; // ফ্ল্যাগ ট্রু করা হলো
+    }
+}
+
+function liveCalc(){
+    let exp = formatExpression(display.innerText);
+    let res = safeEval(exp);
+    resultBox.innerText = res !== "" ? "= " + res : "";
+}
+
+function toggleHistory(){
+    historyOverlay.classList.toggle("active");
+
+    if(historyOverlay.classList.contains("active")){
+        historyOverlay.style.left = "50%";
+        historyOverlay.style.top = "60px";
+        historyOverlay.style.transform = "translateX(-50%)";
+    }
+}
+
+function addHistory(exp, res, save = true){
+    let item = document.createElement("div");
+    item.className = "history-item";
+
+    item.innerHTML = `
+        <div>${exp}</div>
+        <div style="color:#00e676;">= ${res}</div>
+    `;
+
+    item.onclick = function(){
+        display.innerText = exp; // ✅ এখানে res এর বদলে পুরো exp (হিসাব) বসানো হলো
+        isCalculated = false;    // ✅ আবার এডিট বা হিসাব চালু করার সুযোগ থাকবে
+        liveCalc();              // নিচে ছোট করে রিয়েল-টাইম রেজাল্ট দেখাবে
+        toggleHistory();         // হিস্ট্রি প্যানেলটি বন্ধ হয়ে যাবে
+    };
+
+    historyList.prepend(item);
+
+    if(save){
+        savedHistory.unshift({
+            exp: exp,
+            res: res
+        });
+
+        localStorage.setItem(
+            "calculatorHistory",
+            JSON.stringify(savedHistory)
+        );
+    }
+}
+//////////////////////////////////////////////////
+// ✅ KEYBOARD SUPPORT
+//////////////////////////////////////////////////
+
+document.addEventListener("keydown", function(e){
+    let key = e.key;
+
+    if(!isNaN(key) && key !== " "){
+        press(key);
+    }
+    else if(['+','-','*','/'].includes(key)){
+        pressOperator(key);
+    }
+    else if(key === "."){
+        pressDot();
+    }
+    else if(key === "%"){
+        press('%');
+    }
+    else if(key === "Enter" || key === "="){
+        e.preventDefault();
+        calculate();
+    }
+    else if(key === "Backspace"){
+        backspace();
+    }
+    else if(key === "Escape"){
+        clearDisplay();
+    }
+});
+
+//////////////////////////////////////////////////
+// ✅ DRAGGABLE HISTORY
+//////////////////////////////////////////////////
+
+let isDragging = false, offsetX = 0, offsetY = 0;
+
+const header = document.querySelector(".history-header");
+
+header.addEventListener("mousedown", startDrag);
+header.addEventListener("touchstart", startDrag);
+
+function startDrag(e){
+    isDragging = true;
+
+    let rect = historyOverlay.getBoundingClientRect();
+
+    const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+    const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+
+    offsetX = clientX - rect.left;
+    offsetY = clientY - rect.top;
+
+    historyOverlay.style.transform = "none";
+}
+
+document.addEventListener("mousemove", drag);
+document.addEventListener("touchmove", drag);
+
+function drag(e){
+    if(!isDragging) return;
+
+    const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+    const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+
+    historyOverlay.style.left = (clientX - offsetX) + "px";
+    historyOverlay.style.top = (clientY - offsetY) + "px";
+}
+
+document.addEventListener("mouseup", stopDrag);
+document.addEventListener("touchend", stopDrag);
+
+function stopDrag(){
+    isDragging = false;
+}
+</script>
+
+</body>
+</html>
