@@ -1,0 +1,32 @@
+name: Build Desktop App
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/node@v3
+      with:
+        node-version: 18
+
+    - name: Install Dependencies
+      run: npm install
+
+    - name: Build EXE
+      run: npm run build
+
+    - name: Upload EXE Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: Smart-Calculator-EXE
+        path: dist/*.exe
